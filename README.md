@@ -104,3 +104,140 @@
             END
         $function$
 ```
+# Cursores PostgreSQL
+## Incorpora FOR UPDATE/SHARE, realiza una actualización en el cursor y comprueba que ahora el cursor es sensitive.
+
+```SQL
+    CREATE OR REPLACE
+    PROCEDURE empresa.cambioDeNombrePorID(id INT, nombre VARCHAR(100))
+    LANGUAGE plpgsql
+    AS $PROCEDURE$
+    DECLARE cursor_usuarios CURSOR FOR
+    SELECT * FROM empresa.usuarios
+    WHERE id = id
+    FOR UPDATE of nombre;
+    -- la variable usuario alamacenara el registro de la tabla usuarios
+    usuario empresa.usuarios%rowtype;
+
+    BEGIN
+    OPEN cursor_usuarios;
+    FETCH cursor_usuarios INTO usuario;
+    usuario.nombre = nombre;
+    UPDATE empresa.usuarios SET nombre = usuario.nombre WHERE current of cursor_usuarios;
+    CLOSE cursor_usuarios;
+    END;
+```
+
+## Piensa en un caso en el que sea necesario utilizar un cursor. Intenta programarlo. 
+
+En que caso se podria aplicar un cursor?
+Un cursor se podria usar cuando se necesita recorrer una tabla de manera secuencial, por ejemplo para realizar una operacion en cada registro de la tabla, y no se quiere hacer directamente, para tener un mayor control sobre los registros que se estan modificando, por ejemplo cuando tenemos que hacer una operación compleja, que afecte a diversas tablas.
+
+```SQL
+    -- Este procedimiento tiene que cambiar el importe de todos los precio de los productos, y tiene que mostrar el precio anterior y el nuevo precio, para ello se usara un cursor, que tenga almacenado el precio anterior y el nuevo precio.
+    CREATE OR REPLACE
+    PROCEDURE empresa.cambioDePrecio()
+    LANGUAGE plpgsql
+    AS $PROCEDURE$
+    DECLARE cursor_precios CURSOR FOR
+    SELECT * FROM empresa.productos;
+    producto empresa.productos%rowtype;
+
+    BEGIN
+    OPEN cursor_precios;
+    LOOP
+    FETCH cursor_precios INTO producto;
+    exit WHEN NOT found;
+    raise notice 'Precio anterior: %', producto.precio;
+    producto.precio = producto.precio * 1.1;
+    raise notice 'Nuevo precio: %', producto.precio;
+    UPDATE empresa.productos SET precio = producto.precio WHERE current of cursor_precios;
+    END LOOP;
+    CLOSE cursor_precios;
+    END;
+```	
+
+## Investiga si existe algún tipo de estructura de bucle alternativa que permita el recorrido de un cursor.
+
+Como alternativa al bucle LOOP, se puede usar un bucle FOR, que es mas sencillo de usar, ya que no se necesita declarar una variable de control, y se puede usar directamente el cursor, su estructura es la siguiente:
+
+```SQL
+    FOR variable IN cursor_name LOOP
+    -- Cosas que se quieran hacer
+    END LOOP;
+```
+
+Aquí se puede ver un ejemplo de utilización, basado en el ejemeplo anterior.
+
+```SQL
+    CREATE OR REPLACE
+    PROCEDURE empresa.cambioDePrecio()
+    LANGUAGE plpgsql
+    AS $PROCEDURE$
+    DECLARE cursor_precios CURSOR FOR
+    SELECT * FROM empresa.productos;
+    producto empresa.productos%rowtype;
+
+    BEGIN
+    FOR producto IN cursor_precios LOOP
+    raise notice 'Precio anterior: %', producto.precio;
+    producto.precio = producto.precio * 1.1;
+    raise notice 'Nuevo precio: %', producto.precio;
+    UPDATE empresa.productos SET precio = producto.precio WHERE current of cursor_precios;
+    END LOOP;
+    CLOSE cursor_precios;
+    END;
+```
+
+## Ejemplo
+
+```SQL
+    CREATE OR REPLACE
+    PROCEDURE empresa.ejemplo_recorrido_cursor(prec numeric)
+    LANGUAGE plpgsql
+    AS $PROCEDURE$
+    DECLARE  
+    cursor_art cursor(precio_art integer) FOR
+    SELECT id FROM empresa.articulos
+    WHERE precio >= precio_art order by id;
+    id_art integer;
+    BEGIN
+    
+    OPEN cursor_art(prec);  
+    FETCH cursor_art INTO id_art;   -- next (por defecto)
+    raise notice 'Visitando articulo %',id_art;
+    FETCH last FROM cursor_art INTO id_art;
+    raise notice '(last) Visitando articulo %',id_art;
+    FETCH first FROM cursor_art INTO id_art;
+    raise notice '(first) Visitando articulo %',id_art;
+    FETCH next FROM cursor_art INTO id_art;
+    raise notice '(next) Visitando articulo %',id_art;
+    FETCH prior FROM cursor_art INTO id_art;
+    raise notice '(prior) Visitando articulo %',id_art;
+    
+    -- salto absoluto
+    FETCH absolute 5 FROM cursor_art INTO id_art;
+    raise notice '(absolute) Visitando articulo %',id_art;
+    -- salto relativo
+    FETCH relative 2 FROM cursor_art INTO id_art;
+    raise notice '(relative +) Visitando articulo %',id_art;
+    FETCH relative -2 FROM cursor_art INTO id_art;
+    raise notice '(relative -) Visitando articulo %',id_art;
+
+    -- uso de move ...
+    move absolute 2 FROM cursor_art;
+    if found then
+    raise notice 'Encontrada posición 2'; 
+    move prior FROM cursor_art;
+    FETCH FROM cursor_art INTO id_art;
+    raise notice 'Es el articulo %',id_art;
+    else
+    raise notice 'No existe';
+    move first FROM cursor_art;
+    END if;
+
+    CLOSE cursor_art;
+
+    END;
+    $PROCEDURE$
+```
